@@ -39,6 +39,25 @@ func TestInsertEventThenExists(t *testing.T) {
 	}
 }
 
+func TestInsertEventRejectsDuplicateEventID(t *testing.T) {
+	s := testutil.NewStore(t)
+	eventID, callID, accountID := testutil.IDs(t, s)
+	ctx := context.Background()
+
+	evt := store.Event{
+		EventID: eventID, CallID: callID, AccountID: accountID,
+		Status: "completed", DurationSec: 10, Payload: []byte(`{}`),
+	}
+
+	if err := s.InsertEvent(ctx, evt); err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+
+	if err := s.InsertEvent(ctx, evt); err == nil {
+		t.Fatal("duplicate event_id was accepted, want it rejected")
+	}
+}
+
 func TestIncrementAccountStatsAccumulates(t *testing.T) {
 	s := testutil.NewStore(t)
 	_, _, accountID := testutil.IDs(t, s)
@@ -70,6 +89,7 @@ func TestUpsertCallThenMarkRecordingProcessed(t *testing.T) {
 		Status: "completed", DurationSec: 10,
 		RecordingURL: "https://example.com/a.wav", Payload: []byte(`{}`),
 	}
+
 	if err := s.UpsertCall(ctx, evt); err != nil {
 		t.Fatalf("UpsertCall: %v", err)
 	}

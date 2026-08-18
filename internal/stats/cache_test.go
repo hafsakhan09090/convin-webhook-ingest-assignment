@@ -1,8 +1,8 @@
 package stats_test
 
 import (
-	"testing"
 	"sync"
+	"testing"
 
 	"github.com/convin/webhook-ingest/internal/stats"
 )

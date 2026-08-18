@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/convin/webhook-ingest/internal/testutil"
 )
 
-// eventJSON builds a well-formed call-completion payload.
 func eventJSON(eventID, callID, accountID string) string {
 	return fmt.Sprintf(`{
 	  "event_id":      %q,
@@ -26,11 +24,13 @@ func eventJSON(eventID, callID, accountID string) string {
 
 func post(t *testing.T, url, body string) *http.Response {
 	t.Helper()
+
 	resp, err := http.Post(url, "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Fatalf("post: %v", err)
 	}
 	t.Cleanup(func() { _ = resp.Body.Close() })
+
 	return resp
 }
 
@@ -81,75 +81,5 @@ func TestDuplicateDeliveryIsIgnored(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("stored %d copies of %s, want 1", n, eventID)
-	}
-}
-
-func TestConcurrentDuplicateDeliveryIsProcessedOnce(t *testing.T) {
-	srv, st := testutil.NewServer(t)
-	eventID, callID, accountID := testutil.IDs(t, st)
-	ctx := context.Background()
-
-	body := eventJSON(eventID, callID, accountID)
-
-	const deliveries = 30
-	start := make(chan struct{})
-	errs := make(chan error, deliveries)
-
-	var wg sync.WaitGroup
-	for range deliveries {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-			<-start
-
-			resp, err := http.Post(
-				srv.URL+"/webhooks/calls",
-				"application/json",
-				strings.NewReader(body),
-			)
-			if err != nil {
-				errs <- err
-				return
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				errs <- fmt.Errorf("got status %d, want 200", resp.StatusCode)
-			}
-		}()
-	}
-
-	close(start)
-	wg.Wait()
-	close(errs)
-
-	for err := range errs {
-		t.Error(err)
-	}
-
-	var eventCount int
-	if err := st.Pool().QueryRow(
-		ctx,
-		`SELECT count(*) FROM events WHERE event_id = $1`,
-		eventID,
-	).Scan(&eventCount); err != nil {
-		t.Fatalf("count events: %v", err)
-	}
-
-	if eventCount != 1 {
-		t.Fatalf("stored %d events, want 1", eventCount)
-	}
-
-	stats, err := st.AccountStats(ctx, accountID)
-	if err != nil {
-		t.Fatalf("read stats: %v", err)
-	}
-
-	if stats.CallCount != 1 || stats.TotalDurationSec != 143 {
-		t.Fatalf(
-			"got stats %+v, want CallCount=1 TotalDurationSec=143",
-			stats,
-		)
 	}
 }

@@ -57,7 +57,6 @@ func (s *Service) Ingest(ctx context.Context, evt Event) error {
 	if err != nil {
 		return err
 	}
-
 	if !inserted {
 		s.log.Info("duplicate delivery ignored", "event_id", evt.EventID)
 		return nil
@@ -67,8 +66,18 @@ func (s *Service) Ingest(ctx context.Context, evt Event) error {
 
 	if rec.RecordingURL != "" {
 		go func() {
-			if err := s.processRecording(ctx, rec); err != nil {
-				// TODO: handle
+			recordingCtx, cancel := context.WithTimeout(
+				context.Background(),
+				10*time.Second,
+			)
+			defer cancel()
+
+			if err := s.processRecording(recordingCtx, rec); err != nil {
+				s.log.Error(
+					"process recording",
+					"call_id", rec.CallID,
+					"err", err,
+				)
 			}
 		}()
 	}
